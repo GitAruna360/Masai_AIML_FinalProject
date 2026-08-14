@@ -1,0 +1,528 @@
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+import os
+import sqlite3
+import pandas as pd
+
+BASE_URL = "https://books.toscrape.com/catalogue/page-{}.html"
+GBP_TO_INR = 105.50
+RATING_MAP = {
+    "One": 1,
+    "Two": 2,
+    "Three": 3,
+    "Four": 4,
+    "Five": 5
+}
+
+os.makedirs("output", exist_ok=True)
+
+books_data = []
+
+print("=" * 60)
+print("STARTING SCRAPING...")
+print("=" * 60)
+
+for page in range(1, 6):
+
+    print(f"\nScraping Page {page}...")
+
+    url = BASE_URL.format(page)
+
+    response = requests.get(url)
+
+    if response.status_code != 200:
+        print(f"Failed to load Page {page}")
+        continue
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    books = soup.find_all("article", class_="product_pod")
+
+    print(f"Books Found : {len(books)}")
+    for book in books:
+        title = book.h3.a["title"]
+        price_text = book.find("p", class_="price_color").text.strip()
+        rating_text = book.find("p")["class"][1]
+        availability_text = (
+            book.find("p", class_="instock availability")
+            .text.strip()
+        )
+    
+        relative_link = book.h3.a["href"]
+        detail_url = urljoin(url, relative_link)
+        detail_response = requests.get(detail_url)
+        if detail_response.status_code == 200:
+            detail_soup = BeautifulSoup(
+                detail_response.text,
+                "html.parser"
+            )
+            breadcrumb = detail_soup.select("ul.breadcrumb li a")
+
+            if len(breadcrumb) >= 3:
+                category = breadcrumb[2].text.strip()
+            else:
+                category = "Unknown"
+
+        else:
+            category = "Unknown"
+
+        
+        try:
+            price_gbp = float(
+                price_text.replace("£", "").replace("Â", "")
+            )
+        except:
+            price_gbp = None
+
+        
+        rating = RATING_MAP.get(rating_text)
+
+        
+        in_stock = "In stock" in availability_text
+
+        
+        if price_gbp is not None:
+            price_inr = round(price_gbp * GBP_TO_INR, 2)
+        else:
+            price_inr = None
+
+        books_data.append({
+
+            "title": title,
+
+            "price_gbp": price_gbp,
+
+            "price_inr": price_inr,
+
+            "rating": rating,
+
+            "in_stock": in_stock,
+
+            "category": category
+
+        })
+
+df = pd.DataFrame(books_data)
+
+print("\nTotal Books Scraped :", len(df))
+
+print("\nChecking Missing Values...")
+
+print(df.isnull().sum())
+
+
+df["price_gbp"] = df["price_gbp"].fillna(
+    df["price_gbp"].median()
+)
+
+df["price_inr"] = df["price_inr"].fillna(
+    df["price_inr"].median()
+)
+
+df["rating"] = df["rating"].fillna(
+    int(df["rating"].median())
+)
+
+df["price_gbp"] = df["price_gbp"].astype(float)
+
+df["price_inr"] = df["price_inr"].astype(float)
+
+df["rating"] = df["rating"].astype(int)
+
+df["in_stock"] = df["in_stock"].astype(bool)
+
+
+csv_path = "output/books.csv"
+
+df.to_csv(csv_path, index=False)
+
+print("\nCSV Saved Successfully!")
+
+print(csv_path)
+
+
+print("\nFirst 5 Records")
+
+print(df.head())
+
+print("\nData Types")
+
+print(df.dtypes)
+
+print("\nScraping Completed Successfully!")
+
+print("=" * 60)
+
+print("Reading CSV...")
+
+df = pd.read_csv("output/books.csv")
+
+print("Rows Loaded :", len(df))
+
+
+conn = sqlite3.connect("books.db")
+
+cursor = conn.cursor()
+
+print("Database Connected")
+
+
+cursor.execute("DROP TABLE IF EXISTS books")
+
+cursor.execute("DROP TABLE IF EXISTS categories")
+
+
+cursor.execute("""
+CREATE TABLE categories(
+
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    category_name TEXT UNIQUE
+
+)
+""")
+
+
+cursor.execute("""
+CREATE TABLE books(
+
+    book_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    title TEXT,
+
+    price_gbp REAL,
+
+    price_inr REAL,
+
+    rating INTEGER,
+
+    in_stock INTEGER,
+
+    category_id INTEGER,
+
+    FOREIGN KEY(category_id)
+        REFERENCES categories(category_id)
+
+)
+""")
+
+print("Tables Created")
+
+
+categories = sorted(df["category"].unique())
+
+for category in categories:
+
+    cursor.execute("""
+
+        INSERT INTO categories(category_name)
+
+        VALUES(?)
+
+    """, (category,))
+
+print("Categories Inserted")
+
+
+cursor.execute("""
+
+SELECT
+category_id,
+category_name
+
+FROM categories
+
+""")
+
+category_map = {
+
+    name: cid
+
+    for cid, name in cursor.fetchall()
+
+}
+
+
+for _, row in df.iterrows():
+
+    cursor.execute("""
+
+    INSERT INTO books(
+
+        title,
+
+        price_gbp,
+
+        price_inr,
+
+        rating,
+
+        in_stock,
+
+        category_id
+
+    )
+
+    VALUES(?,?,?,?,?,?)
+
+    """,
+
+    (
+
+        row["title"],
+
+        row["price_gbp"],
+
+        row["price_inr"],
+
+        int(row["rating"]),
+
+        int(row["in_stock"]),
+
+        category_map[row["category"]]
+
+    )
+
+    )
+
+conn.commit()
+
+print("Books Inserted Successfully")
+
+cursor.execute("SELECT COUNT(*) FROM categories")
+
+print("Total Categories :", cursor.fetchone()[0])
+
+cursor.execute("SELECT COUNT(*) FROM books")
+
+print("Total Books :", cursor.fetchone()[0])
+
+conn.close()
+
+print("\nDatabase Created Successfully!")
+
+print("books.db")
+
+
+conn = sqlite3.connect("books.db")
+
+cursor = conn.cursor()
+
+print("=" * 60)
+print("DATABASE QUERIES")
+print("=" * 60)
+
+print("\nQUERY 1")
+print("Books with Rating >= 4")
+
+query1 = """
+SELECT title,rating
+FROM books
+WHERE rating>=4
+"""
+
+df1 = pd.read_sql(query1, conn)
+
+print(df1)
+
+print("\nQUERY 2")
+print("Books Ordered by Price (Highest First)")
+
+query2 = """
+SELECT title,price_inr
+FROM books
+ORDER BY price_inr DESC
+"""
+
+df2 = pd.read_sql(query2, conn)
+
+print(df2.head(10))
+
+print("\nQUERY 3")
+print("First 10 Books")
+
+query3 = """
+SELECT *
+FROM books
+LIMIT 10
+"""
+
+df3 = pd.read_sql(query3, conn)
+
+print(df3)
+
+print("\nQUERY 4")
+print("Distinct Categories")
+
+query4 = """
+SELECT DISTINCT category_name
+FROM categories
+"""
+
+df4 = pd.read_sql(query4, conn)
+
+print(df4)
+
+print("\nQUERY 5")
+print("Books priced between 20 and 40 GBP")
+
+query5 = """
+SELECT title,price_gbp
+FROM books
+WHERE price_gbp BETWEEN 20 AND 40
+"""
+
+df5 = pd.read_sql(query5, conn)
+
+print(df5)
+
+print("\nQUERY 6")
+print("Books with Category")
+
+join_query = """
+
+SELECT
+
+b.title,
+
+c.category_name,
+
+b.rating,
+
+b.price_inr
+
+FROM books b
+
+JOIN categories c
+
+ON b.category_id=c.category_id
+
+ORDER BY b.rating DESC
+
+LIMIT 10
+
+"""
+
+join_df = pd.read_sql(join_query, conn)
+
+print(join_df)
+
+
+
+books_df = pd.read_sql(
+    "SELECT * FROM books",
+    conn
+)
+
+categories_df = pd.read_sql(
+    "SELECT * FROM categories",
+    conn
+)
+
+
+
+merged_df = pd.merge(
+
+    books_df,
+
+    categories_df,
+
+    on="category_id"
+
+)
+
+merged_df = merged_df[
+
+    [
+
+        "title",
+
+        "category_name",
+
+        "rating",
+
+        "price_inr"
+
+    ]
+
+]
+
+merged_df = merged_df.sort_values(
+
+    by="rating",
+
+    ascending=False
+
+).head(10)
+
+print("\n" + "="*60)
+
+print("JOIN USING PANDAS MERGE")
+
+print("="*60)
+
+print(merged_df)
+
+
+print("\nComparison")
+
+print("SQL JOIN Rows :", len(join_df))
+
+print("Merge Rows    :", len(merged_df))
+
+
+with open(
+
+    "output/queries_output.txt",
+
+    "w",
+
+    encoding="utf-8"
+
+) as f:
+
+    f.write("QUERY 1\n")
+
+    f.write(df1.to_string())
+
+    f.write("\n\n")
+
+    f.write("QUERY 2\n")
+
+    f.write(df2.to_string())
+
+    f.write("\n\n")
+
+    f.write("QUERY 3\n")
+
+    f.write(df3.to_string())
+
+    f.write("\n\n")
+
+    f.write("QUERY 4\n")
+
+    f.write(df4.to_string())
+
+    f.write("\n\n")
+
+    f.write("QUERY 5\n")
+
+    f.write(df5.to_string())
+
+    f.write("\n\n")
+
+    f.write("QUERY 6\n")
+
+    f.write(join_df.to_string())
+
+print("\nQuery Output Saved")
+
+print("output/queries_output.txt")
+
+conn.close()
+
+print("\nCompleted Successfully!")
+
+print("=" * 60)
