@@ -1,0 +1,491 @@
+"""
+Titanic EDA Analysis
+Converted from the provided Jupyter Notebook into an executable Python script.
+"""
+
+def main():
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import sklearn
+    import imblearn
+    import joblib
+
+    print("All required packages are working!")
+
+    # Load the Titanic dataset ONCE
+    df = sns.load_dataset("titanic")
+
+    print("Titanic dataset loaded successfully.")
+    print("Dataset shape:", df.shape)
+
+    # Save the raw Titanic dataset as the offline fallback
+    df.to_csv("titanic.csv", index=False)
+
+    print("Offline fallback saved successfully as analytics/titanic.csv")
+
+    print("========== DATASET INFO ==========")
+    df.info()
+
+    print("\n========== DATASET DESCRIPTION ==========")
+    print(df.describe().to_string())
+
+    print("\n========== DATASET SHAPE ==========")
+    print(df.shape)
+
+    # Calculate missing-value percentage for every column
+    missing_percentage = (
+        df.isnull().mean() * 100
+    ).sort_values(ascending=False)
+
+    # Keep only columns that actually contain missing values
+    missing_percentage = missing_percentage[
+        missing_percentage > 0
+    ]
+
+    print("Missing-value percentage by column:\n")
+
+    print(
+        missing_percentage.to_frame(
+            name="Missing Percentage (%)"
+        ).round(2).to_string()
+    )
+
+    missing_counts = df.isnull().sum()
+
+    missing_counts = missing_counts[
+        missing_counts > 0
+    ]
+
+    print("Missing-value count by column:\n")
+
+    print(
+        missing_counts.to_frame(
+            name="Missing Count"
+        ).to_string()
+    )
+
+    # Calculate missing-value percentage
+    missing_percentage = (
+        df.isnull().mean() * 100
+    ).sort_values(ascending=False)
+
+    # Keep only columns with missing values
+    missing_percentage = missing_percentage[
+        missing_percentage > 0
+    ]
+
+    print("Missing-value percentage by column:\n")
+
+    print(
+        missing_percentage
+        .to_frame(name="Missing Percentage (%)")
+        .round(2).to_string()
+    )
+
+    # Create a separate cleaned DataFrame
+    cleaned_df = df.copy()
+
+    # 1. Drop very-high-missingness column
+    cleaned_df = cleaned_df.drop(columns=["deck"])
+
+    # 2. Impute age because its missing percentage is between 5% and 30%
+    cleaned_df["age"] = cleaned_df["age"].fillna(
+        cleaned_df["age"].median()
+    )
+
+    # 3. Drop rows with missing embarked values (<5% missing)
+    cleaned_df = cleaned_df.dropna(
+        subset=["embarked"]
+    )
+
+    # 4. Drop redundant embark_town column
+    cleaned_df = cleaned_df.drop(
+        columns=["embark_town"]
+    )
+
+    print("Cleaning completed.")
+    print("Original shape :", df.shape)
+    print("Cleaned shape  :", cleaned_df.shape)
+
+    print("Remaining missing values:")
+    print(cleaned_df.isnull().sum().to_string())
+
+    print("Total missing values remaining:",
+          cleaned_df.isnull().sum().sum())
+
+    import os
+
+    os.makedirs("charts", exist_ok=True)
+
+    print("Current working directory:")
+    print(os.getcwd())
+
+    print("\nCharts folder created/verified.")
+
+    plt.figure(figsize=(8, 5))
+
+    sns.histplot(
+        cleaned_df["age"],
+        bins=30,
+        kde=True
+    )
+
+    plt.title("Distribution of Age")
+    plt.xlabel("Age")
+    plt.ylabel("Frequency")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/age_histogram.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    plt.figure(figsize=(8, 5))
+
+    sns.boxplot(
+        x=cleaned_df["age"]
+    )
+
+    plt.title("Box Plot of Age")
+    plt.xlabel("Age")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/age_boxplot.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    age_q1 = cleaned_df["age"].quantile(0.25)
+    age_q3 = cleaned_df["age"].quantile(0.75)
+
+    age_iqr = age_q3 - age_q1
+
+    age_lower_bound = age_q1 - 1.5 * age_iqr
+    age_upper_bound = age_q3 + 1.5 * age_iqr
+
+    age_outliers = cleaned_df[
+        (cleaned_df["age"] < age_lower_bound) |
+        (cleaned_df["age"] > age_upper_bound)
+    ]
+
+    print(f"Age Q1: {age_q1:.2f}")
+    print(f"Age Q3: {age_q3:.2f}")
+    print(f"Age IQR: {age_iqr:.2f}")
+    print(f"Age lower bound: {age_lower_bound:.2f}")
+    print(f"Age upper bound: {age_upper_bound:.2f}")
+    print(f"Number of age outliers: {len(age_outliers)}")
+
+    plt.figure(figsize=(8, 5))
+
+    sns.histplot(
+        cleaned_df["fare"],
+        bins=30,
+        kde=True
+    )
+
+    plt.title("Distribution of Fare")
+    plt.xlabel("Fare")
+    plt.ylabel("Frequency")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/fare_histogram.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    plt.figure(figsize=(8, 5))
+
+    sns.boxplot(
+        x=cleaned_df["fare"]
+    )
+
+    plt.title("Box Plot of Fare")
+    plt.xlabel("Fare")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/fare_boxplot.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    fare_q1 = cleaned_df["fare"].quantile(0.25)
+    fare_q3 = cleaned_df["fare"].quantile(0.75)
+
+    fare_iqr = fare_q3 - fare_q1
+
+    fare_lower_bound = fare_q1 - 1.5 * fare_iqr
+    fare_upper_bound = fare_q3 + 1.5 * fare_iqr
+
+    fare_outliers = cleaned_df[
+        (cleaned_df["fare"] < fare_lower_bound) |
+        (cleaned_df["fare"] > fare_upper_bound)
+    ]
+
+    print(f"Fare Q1: {fare_q1:.2f}")
+    print(f"Fare Q3: {fare_q3:.2f}")
+    print(f"Fare IQR: {fare_iqr:.2f}")
+    print(f"Fare lower bound: {fare_lower_bound:.2f}")
+    print(f"Fare upper bound: {fare_upper_bound:.2f}")
+    print(f"Number of fare outliers: {len(fare_outliers)}")
+
+    fare_mean = cleaned_df["fare"].mean()
+    fare_median = cleaned_df["fare"].median()
+    fare_mode = cleaned_df["fare"].mode()[0]
+
+    print(f"Fare Mean   : {fare_mean:.4f}")
+    print(f"Fare Median : {fare_median:.4f}")
+    print(f"Fare Mode   : {fare_mode:.4f}")
+
+    fare_skewness = cleaned_df["fare"].skew()
+
+    print(f"Fare Skewness: {fare_skewness:.4f}")
+
+    male_survival = cleaned_df[
+        cleaned_df["sex"] == "male"
+    ]["survived"].mean()
+
+    female_survival = cleaned_df[
+        cleaned_df["sex"] == "female"
+    ]["survived"].mean()
+
+    print(f"Male survival rate   : {male_survival:.4f}")
+    print(f"Female survival rate : {female_survival:.4f}")
+
+    sex_survival = (
+        cleaned_df
+        .groupby("sex")["survived"]
+        .mean()
+        .mul(100)
+        .round(2)
+    )
+
+    print(sex_survival.to_frame("Survival Rate (%)").to_string())
+
+    pclass_survival = (
+        cleaned_df
+        .groupby("pclass")["survived"]
+        .mean()
+        .mul(100)
+        .round(2)
+    )
+
+    print(
+        pclass_survival.to_frame("Survival Rate (%)").to_string()
+    )
+
+    sex_pclass_survival = (
+        cleaned_df
+        .groupby(["sex", "pclass"])["survived"]
+        .mean()
+        .mul(100)
+        .round(2)
+    )
+
+    print(
+        sex_pclass_survival.to_frame("Survival Rate (%)").to_string()
+    )
+
+    correlation_columns = [
+        "survived",
+        "pclass",
+        "age",
+        "sibsp",
+        "parch",
+        "fare"
+    ]
+
+    correlation_matrix = cleaned_df[
+        correlation_columns
+    ].corr()
+
+    print("6×6 Correlation Matrix:")
+    print(correlation_matrix.round(4).to_string())
+
+    plt.figure(figsize=(9, 7))
+
+    sns.heatmap(
+        correlation_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        square=True
+    )
+
+    plt.title(
+        "Correlation Matrix of Titanic Numerical Features"
+    )
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/correlation_heatmap.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    # Find the two strongest off-diagonal correlations
+    corr_pairs = []
+
+    for i in range(len(correlation_columns)):
+        for j in range(i + 1, len(correlation_columns)):
+
+            feature_1 = correlation_columns[i]
+            feature_2 = correlation_columns[j]
+
+            correlation_value = correlation_matrix.loc[
+                feature_1,
+                feature_2
+            ]
+
+            corr_pairs.append(
+                {
+                    "Feature 1": feature_1,
+                    "Feature 2": feature_2,
+                    "Correlation": correlation_value,
+                    "Absolute Correlation": abs(correlation_value)
+                }
+            )
+
+    corr_pairs_df = pd.DataFrame(corr_pairs)
+
+    corr_pairs_df = corr_pairs_df.sort_values(
+        by="Absolute Correlation",
+        ascending=False
+    )
+
+    print("Two strongest correlations:")
+    print(
+        corr_pairs_df.head(2).round(4).to_string()
+    )
+
+    plt.figure(figsize=(7, 5))
+
+    sns.barplot(
+        data=cleaned_df,
+        x="sex",
+        y="survived"
+    )
+
+    plt.title("Survival Rate by Sex")
+    plt.xlabel("Sex")
+    plt.ylabel("Survival Rate")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/survival_by_sex.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    plt.figure(figsize=(7, 5))
+
+    sns.barplot(
+        data=cleaned_df,
+        x="pclass",
+        y="survived"
+    )
+
+    plt.title("Survival Rate by Passenger Class")
+    plt.xlabel("Passenger Class")
+    plt.ylabel("Survival Rate")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/survival_by_pclass.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    plt.figure(figsize=(8, 5))
+
+    sns.barplot(
+        data=cleaned_df,
+        x="pclass",
+        y="survived",
+        hue="sex"
+    )
+
+    plt.title("Survival Rate by Sex and Passenger Class")
+    plt.xlabel("Passenger Class")
+    plt.ylabel("Survival Rate")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/survival_by_sex_pclass.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    plt.figure(figsize=(8, 6))
+
+    sns.scatterplot(
+        data=cleaned_df,
+        x="age",
+        y="fare",
+        hue="survived"
+    )
+
+    plt.title("Age vs Fare by Survival")
+    plt.xlabel("Age")
+    plt.ylabel("Fare")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        "charts/age_fare_survival.png",
+        dpi=300
+    )
+
+    plt.show()
+
+    print("Before standardization:")
+
+    before_stats = cleaned_df[["age", "fare"]].agg(
+        ["mean", "std"]
+    )
+
+    print(before_stats.to_string())
+
+    from sklearn.preprocessing import StandardScaler
+
+    eda_scaler = StandardScaler()
+
+    standardized_df = cleaned_df.copy()
+
+    standardized_df[["age", "fare"]] = eda_scaler.fit_transform(
+        standardized_df[["age", "fare"]]
+    )
+
+    print("Standardization completed.")
+
+    print("After standardization:")
+
+    after_stats = standardized_df[["age", "fare"]].agg(
+        ["mean", "std"]
+    )
+
+    print(after_stats.to_string())
+
+if __name__ == "__main__":
+    main()
