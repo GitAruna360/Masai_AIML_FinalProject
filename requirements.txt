@@ -1,0 +1,27 @@
+# Web Scraping
+requests
+beautifulsoup4
+
+# Data Analysis and Visualization
+pandas
+numpy
+matplotlib
+seaborn
+
+# Machine Learning
+scikit-learn
+imbalanced-learn
+joblib
+
+# GenAI / RAG
+sentence-transformers
+chromadb
+langgraph
+pydantic
+
+# API
+fastapi
+uvicorn
+
+# Optional: Real LLM mode
+groq
